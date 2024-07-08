@@ -6,7 +6,7 @@ import requests
 # Configure logging
 logging.basicConfig(filename='lyrics_fetch.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-directory_path = '/raid/music'
+directory_path = '/raid/music/'
 
 def get_lyrics(artist, title, album, duration):
     url = "https://lrclib.net/api/get"
@@ -23,8 +23,15 @@ def get_lyrics(artist, title, album, duration):
         lyrics = response.json().get("syncedLyrics") or response.json().get("plainLyrics")
         return lyrics
     else:
-        logging.warning("Failed to fetch lyrics for %s by %s", title, artist)
-        return None
+        try:
+            logging.info("No exact match found. Using closest match.")
+            url = "https://lrclib.net/api/search"
+            response = requests.get(url, params=params)
+            lyrics_json = response.json()
+            return lyrics_json[0]["plainLyrics"]
+        except Exception as e:
+            logging.warning("Failed to fetch lyrics for %s by %s.", title, artist)
+            return None
 
 def get_song_details(file_path):
     audio = TinyTag.get(file_path)
