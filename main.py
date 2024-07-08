@@ -6,13 +6,13 @@ import requests
 # Configure logging
 logging.basicConfig(filename='lyrics_fetch.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-directory_path = '/home/serveradmin/media/music'
+directory_path = '/raid/music'
 
 def get_lyrics(artist, title, album, duration):
     url = "https://lrclib.net/api/get"
     params = {
-        "artist_name": artist,
         "track_name": title,
+        "artist_name": artist,
         "album_name": album,
         "duration": duration
     }
@@ -20,7 +20,11 @@ def get_lyrics(artist, title, album, duration):
     response = requests.get(url, params=params)
     if response.status_code == 200:
         logging.info("Found Lyrics for the song: %s", title)
-    return response.json()["syncedLyrics"].encoding('utf-8')
+        lyrics = response.json().get("syncedLyrics") or response.json().get("plainLyrics")
+        return lyrics
+    else:
+        logging.warning("Failed to fetch lyrics for %s by %s", title, artist)
+        return None
 
 def get_song_details(file_path):
     audio = TinyTag.get(file_path)
@@ -37,6 +41,7 @@ def collect_audio_files(directory_path):
 Found_lyrics = 0
 Missing_lyrics = 0
 Total_lyrics = 0
+
 print("Starting the lyrics fetching process...")
 print("Writing logs to lyrics_fetch.log")
 
@@ -46,31 +51,35 @@ try:
     for idx, file_path in enumerate(audio_files, start=1):
         logging.info("Processing file %s of %s - %s", idx, total_files, file_path)
         new_file_path = os.path.splitext(file_path)[0] + '.lrc'
-        if os.path.exists(new_file_path):
+        if os.path.exists(new_file_path) and os.path.getsize(new_file_path) > 0:
             logging.info("Lyrics already exist for the song: %s", file_path)
+            Found_lyrics += 1
             continue
         try:
             album, title, artist, duration = get_song_details(file_path)
             lyrics = get_lyrics(artist, title, album, duration)
         except Exception as e:
-            logging.error("Error in fetching lyrics for the song: %s", file_path)
-            Missing_lyrics = Missing_lyrics + 1
+            logging.error("Error in fetching song details or lyrics for the song: %s - %s", file_path, str(e))
+            Missing_lyrics += 1
             continue
+
+        if not lyrics:
+            logging.info("Lyrics not found for the song: %s", file_path)
+            Missing_lyrics += 1
+            continue
+
         try:
-            if (lyrics is  None):
-                logging.info("Lyrics not found for the song: %s", file_path)
-                Missing_lyrics = Missing_lyrics + 1
-                continue
-            with open(new_file_path, 'w') as f:
+            with open(new_file_path, 'w', encoding='utf-8') as f:
                 f.write(lyrics)
-                Total_lyrics = Total_lyrics + 1
+                Found_lyrics += 1
         except Exception as e:
-            logging.error("Error in writing lyrics for the song: %s", file_path)
+            logging.error("Error in writing lyrics for the song: %s - %s", file_path, str(e))
             continue
+        Total_lyrics += 1
+
 except KeyboardInterrupt:
     logging.info("Exiting the program due to keyboard interrupt")
     exit(0)
-
 
 print("Total songs processed:", total_files)
 print("Total songs with lyrics found:", Found_lyrics)
